@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Tuple, Optional
 import time
 import re
@@ -48,8 +49,9 @@ def _parse_first_number(s: str) -> Optional[float]:
 
 def run_manual_llm_flow(
     n: int = 10,
-    density: float = 0.55,
+    density: float = 0.70,
     seed: int = 42,
+    prompt_path: str | Path | None = None,
 ) -> LLMManualResult:
     """
     Parte 2 (manual): gera prompt, inicia cronômetro e pede para o usuário colar a resposta.
@@ -59,26 +61,9 @@ def run_manual_llm_flow(
     arcs = [(label(u), label(v), c) for (u, v, c) in g.arcs()]
 
     prompt = build_prompt(vertices, arcs)
-    print("=" * 90)
-    print("COPIE o prompt abaixo e cole na sua IA generativa (ChatGPT, etc.).")
-    print("Depois, volte aqui e cole SOMENTE a resposta numérica (ou a primeira linha com número).")
-    print("=" * 90)
-    print(prompt)
-    print("=" * 90)
-
-    input("Quando estiver pronto(a) para iniciar o tempo (você vai colar o prompt na IA), pressione ENTER... ")
-    t0 = time.perf_counter()
-    answer = input("Cole aqui a resposta da IA (ex: 42) e pressione ENTER: ").strip()
-    t1 = time.perf_counter()
-
-    val = _parse_first_number(answer)
-    if val is None:
-        raise ValueError("Não consegui extrair um número da resposta colada. Tente novamente.")
-
-    return LLMManualResult(
-        n=n,
-        seed=seed,
-        density=density,
-        llm_seconds=float(t1 - t0),
-        llm_max_flow=float(val),
-    )
+    if prompt_path is not None:
+        p = Path(prompt_path)
+        p.write_text(prompt, encoding="utf-8")
+        print(f"Prompt salvo em: {p.resolve()}")
+    else:
+        print(prompt)

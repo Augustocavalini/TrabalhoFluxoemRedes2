@@ -3,7 +3,7 @@
 Este projeto implementa **duas simulações** para computar **Fluxo Máximo** entre `X1` (origem) e `Xn` (destino),
 conforme solicitado no PDF do trabalho:
 
-- **Simulação 1 (lista de antecessores + DFS alvo)**: Ford–Fulkerson usando busca em profundidade *alvo* no **grafo residual**,
+- **Simulação 1 (lista de antecessores + DFS alvo)**: Ford–Fulkerson usando busca em profundidade _alvo_ no **grafo residual**,
   percorrendo **lista de antecessores**.
 - **Simulação 2 (lista de sucessores + BFS alvo)**: Edmonds–Karp (Ford–Fulkerson com BFS) no residual,
   percorrendo **lista de sucessores**.
@@ -42,14 +42,14 @@ python run.py from-matrix examples/matrix_6.csv
 
 O PDF pede que o prompt solicite **somente** o valor do fluxo máximo, fornecendo os vértices e os arcos com capacidades.
 
-1) Gere o prompt:
+1. Gere o prompt:
 
 ```bash
 python run.py prompt --n 10 --seed 42
 ```
 
-2) Copie o prompt gerado e cole em uma IA generativa.
-3) Volte no terminal e cole a resposta quando o script pedir. Ele mede o tempo e compara com as duas soluções.
+2. Copie o prompt gerado e cole em uma IA generativa.
+3. Volte no terminal e cole a resposta quando o script pedir. Ele mede o tempo e compara com as duas soluções.
 
 ## Estrutura
 
@@ -87,10 +87,12 @@ Ou apontando para uma pasta específica:
 python run.py report --run-dir outputs/run_YYYY-MM-DD_HHMMSS
 ```
 
+O relatório inclui estatísticas detalhadas (min/mediana/máximo, desvio padrão, CV e p95),
+além de boxplot e histogramas dos tempos.
 
 #### Resumo dos algoritmos utilizados
 
- **Ford–Fulkerson** :
+**Ford–Fulkerson** :
 
 1. Começa com fluxo 0 e residual = capacidade original.
 2. Encontra um caminho aumentante (qualquer caminho de X1 a Xn no residual com capacidade > 0) usando DFS.
@@ -101,7 +103,7 @@ python run.py report --run-dir outputs/run_YYYY-MM-DD_HHMMSS
 
 Desvantagem: pode ser lento em redes grandes porque não escolhe caminhos inteligentemente.
 
- **Edmonds–Karp** :
+**Edmonds–Karp** :
 
 1. Idêntico ao Ford–Fulkerson, mas **sempre escolhe o caminho aumentante mais curto** usando BFS.
 2. Isso garante que cada aresta é usada no máximo O(n) vezes.
@@ -111,9 +113,9 @@ Vantagem: complexidade garantida polinomial, muito mais eficiente em redes grand
 
 #### Resumo das condições de fluxo máximo:
 
-* **Capacidade** : cada aresta tem limite; o fluxo nela não pode passar desse valor.
-* **Conservação** : em nós intermediários, tudo que entra deve sair (fluxo líquido zero).
-* **Origem/Destino** : X1 só envia; Xn só recebe.
-* **Fluxo máximo** : é o maior total possível de X1 para Xn, limitado pelos gargalos da rede, não por “encher” todas as arestas do destino.
-  * Gargalos são partes da rede que limitam o total que pode passar. São arestas ou conjuntos de arestas com pouca capacidade que “estrangulam” o fluxo.
-    Formalmente, é o  **corte mínimo** : a soma das capacidades das arestas que, se removidas, separariam X1 de Xn. Esse valor é o limite do fluxo máximo.
+- **Capacidade** : cada aresta tem limite; o fluxo nela não pode passar desse valor.
+- **Conservação** : em nós intermediários, tudo que entra deve sair (fluxo líquido zero).
+- **Origem/Destino** : X1 só envia; Xn só recebe.
+- **Fluxo máximo** : é o maior total possível de X1 para Xn, limitado pelos gargalos da rede, não por “encher” todas as arestas do destino.
+  - Gargalos são partes da rede que limitam o total que pode passar. São arestas ou conjuntos de arestas com pouca capacidade que “estrangulam” o fluxo.
+    Formalmente, é o **corte mínimo** : a soma das capacidades das arestas que, se removidas, separariam X1 de Xn. Esse valor é o limite do fluxo máximo.

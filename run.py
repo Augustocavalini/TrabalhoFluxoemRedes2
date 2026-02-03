@@ -40,6 +40,17 @@ def cmd_simulate(args: argparse.Namespace) -> None:
             f"times=[{ek_times}] mean={row['ek_succ_bfs_mean']:.6f}s"
             f" | equal={row['equal_flows']}"
         )
+        ff_std = row.get("ff_pred_dfs_std")
+        ek_std = row.get("ek_succ_bfs_std")
+        ff_med = row.get("ff_pred_dfs_median")
+        ek_med = row.get("ek_succ_bfs_median")
+        ff_p95 = row.get("ff_pred_dfs_p95")
+        ek_p95 = row.get("ek_succ_bfs_p95")
+        if ff_std is not None and ek_std is not None:
+            print(
+                f"  FF: median={ff_med:.6f}s std={ff_std:.6f}s p95={ff_p95:.6f}s"
+                f" | EK: median={ek_med:.6f}s std={ek_std:.6f}s p95={ek_p95:.6f}s"
+            )
     print(f"\nArquivos salvos em: {out.resolve()}")
 
 
@@ -65,9 +76,13 @@ def cmd_prompt(args: argparse.Namespace) -> None:
     g = generate_dense_random_graph(n=args.n, density=args.density, seed=args.seed)
     save_capacity_matrix_csv(g, out / f"matrix_n{args.n}_seed{args.seed}.csv")
 
-    res = run_manual_llm_flow(n=args.n, density=args.density, seed=args.seed)
-    (out / "benchmark_part2_manual.json").write_text(json.dumps(res.__dict__, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\nResultado (Parte 2 - manual) salvo em: {out.resolve()}")
+    run_manual_llm_flow(
+        n=args.n,
+        density=args.density,
+        seed=args.seed,
+        prompt_path=out / "prompt.txt",
+    )
+
 
 
 def cmd_report(args):
@@ -88,7 +103,7 @@ def main() -> None:
     p_sim.add_argument("--seed", type=int, default=42)
     p_sim.add_argument("--density10", type=float, default=0.70)
     p_sim.add_argument("--density100", type=float, default=0.50)
-    p_sim.add_argument("--repetitions", type=int, default=5)
+    p_sim.add_argument("--repetitions", type=int, default=10)
     p_sim.set_defaults(func=cmd_simulate)
 
     p_mat = sub.add_parser("from-matrix", help="Lê uma matriz CSV NxN e computa o fluxo máximo.")
