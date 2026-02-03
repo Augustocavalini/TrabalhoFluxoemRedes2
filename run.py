@@ -27,12 +27,17 @@ def cmd_simulate(args: argparse.Namespace) -> None:
         density_10=args.density10,
         density_100=args.density100,
         seed=args.seed,
+        repetitions=args.repetitions,
     )
     print("\n=== BENCHMARK (Parte 1) ===")
     for row in data["rows"]:
+        ff_times = ", ".join(f"{t:.6f}s" for t in row["ff_pred_dfs_times"])
+        ek_times = ", ".join(f"{t:.6f}s" for t in row["ek_succ_bfs_times"])
         print(
-            f"n={row['n']} | FF(antecessores+DFS) flow={row['ff_pred_dfs_flow']:.2f} time={row['ff_pred_dfs_seconds']:.6f}s"
-            f" | EK(sucessores+BFS) flow={row['ek_succ_bfs_flow']:.2f} time={row['ek_succ_bfs_seconds']:.6f}s"
+            f"n={row['n']} | FF(antecessores+DFS) flow={row['ff_pred_dfs_flow']:.2f} "
+            f"times=[{ff_times}] mean={row['ff_pred_dfs_mean']:.6f}s"
+            f" | EK(sucessores+BFS) flow={row['ek_succ_bfs_flow']:.2f} "
+            f"times=[{ek_times}] mean={row['ek_succ_bfs_mean']:.6f}s"
             f" | equal={row['equal_flows']}"
         )
     print(f"\nArquivos salvos em: {out.resolve()}")
@@ -81,8 +86,9 @@ def main() -> None:
 
     p_sim = sub.add_parser("simulate", help="Roda simulações (n=10 e n=100) e mede tempos.")
     p_sim.add_argument("--seed", type=int, default=42)
-    p_sim.add_argument("--density10", type=float, default=0.55)
-    p_sim.add_argument("--density100", type=float, default=0.35)
+    p_sim.add_argument("--density10", type=float, default=0.70)
+    p_sim.add_argument("--density100", type=float, default=0.50)
+    p_sim.add_argument("--repetitions", type=int, default=5)
     p_sim.set_defaults(func=cmd_simulate)
 
     p_mat = sub.add_parser("from-matrix", help="Lê uma matriz CSV NxN e computa o fluxo máximo.")

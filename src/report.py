@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime
 import json
+import math
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -13,6 +14,10 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 
 import matplotlib.pyplot as plt
+import numpy as np
+
+from .graph import load_capacity_matrix_csv, label
+from .maxflow_succ_bfs import max_flow_edmonds_karp_succ_bfs
 
 
 @dataclass
@@ -21,9 +26,11 @@ class Part1Row:
     density: float
     seed: int
     ff_pred_dfs_flow: float
-    ff_pred_dfs_seconds: float
+    ff_pred_dfs_times: List[float]
+    ff_pred_dfs_mean: float
     ek_succ_bfs_flow: float
-    ek_succ_bfs_seconds: float
+    ek_succ_bfs_times: List[float]
+    ek_succ_bfs_mean: float
     equal_flows: bool
 
 
@@ -52,14 +59,26 @@ def _load_part1(run_dir: Path) -> List[Part1Row]:
     data = json.loads(p.read_text(encoding="utf-8"))
     rows = []
     for r in data.get("rows", []):
+        ff_times = [float(x) for x in r.get("ff_pred_dfs_times", [])]
+        ek_times = [float(x) for x in r.get("ek_succ_bfs_times", [])]
+        ff_seconds = float(r.get("ff_pred_dfs_seconds", 0.0))
+        ek_seconds = float(r.get("ek_succ_bfs_seconds", 0.0))
+        if not ff_times:
+            ff_times = [ff_seconds]
+        if not ek_times:
+            ek_times = [ek_seconds]
+        ff_mean = float(r.get("ff_pred_dfs_mean", sum(ff_times) / len(ff_times)))
+        ek_mean = float(r.get("ek_succ_bfs_mean", sum(ek_times) / len(ek_times)))
         rows.append(Part1Row(
             n=int(r["n"]),
             density=float(r["density"]),
             seed=int(r["seed"]),
             ff_pred_dfs_flow=float(r["ff_pred_dfs_flow"]),
-            ff_pred_dfs_seconds=float(r["ff_pred_dfs_seconds"]),
+            ff_pred_dfs_times=ff_times,
+            ff_pred_dfs_mean=ff_mean,
             ek_succ_bfs_flow=float(r["ek_succ_bfs_flow"]),
-            ek_succ_bfs_seconds=float(r["ek_succ_bfs_seconds"]),
+            ek_succ_bfs_times=ek_times,
+            ek_succ_bfs_mean=ek_mean,
             equal_flows=bool(r["equal_flows"]),
         ))
     if not rows:
@@ -90,8 +109,8 @@ def _safe_div(a: float, b: float) -> float:
 def _make_part1_table(rows: List[Part1Row]) -> Table:
     header = [
         "n", "densidade", "seed",
-        "FF (pred+DFS)\nfluxo", "FF (pred+DFS)\ntempo (s)",
-        "EK (succ+BFS)\nfluxo", "EK (succ+BFS)\ntempo (s)",
+        "FF (pred+DFS)\nfluxo", "FF média (s)",
+        "EK (succ+BFS)\nfluxo", "EK média (s)",
         "igual?"
     ]
     body = []
@@ -101,12 +120,15 @@ def _make_part1_table(rows: List[Part1Row]) -> Table:
             f"{r.density:.2f}",
             str(r.seed),
             f"{r.ff_pred_dfs_flow:.2f}",
-            f"{r.ff_pred_dfs_seconds:.6f}",
+            f"{r.ff_pred_dfs_mean:.6f}",
             f"{r.ek_succ_bfs_flow:.2f}",
-            f"{r.ek_succ_bfs_seconds:.6f}",
+            f"{r.ek_succ_bfs_mean:.6f}",
             "sim" if r.equal_flows else "não",
         ])
-    table = Table([header] + body, colWidths=[1.1*cm, 2.0*cm, 1.4*cm, 2.6*cm, 2.8*cm, 2.6*cm, 2.8*cm, 1.5*cm])
+    table = Table(
+        [header] + body,
+        colWidths=[1.1*cm, 1.8*cm, 1.2*cm, 2.4*cm, 2.2*cm, 2.4*cm, 2.2*cm, 1.2*cm],
+    )
     table.setStyle(TableStyle([
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
         ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
@@ -120,10 +142,124 @@ def _make_part1_table(rows: List[Part1Row]) -> Table:
     return table
 
 
+def _make_times_table(rows: List[Part1Row]) -> Table:
+    header = [
+        "n",
+        "FF t1", "FF t2", "FF t3", "FF t4", "FF t5", "FF média",
+        "EK t1", "EK t2", "EK t3", "EK t4", "EK t5", "EK média",
+    ]
+    body = []
+    for r in rows:
+        ff = (r.ff_pred_dfs_times + [0.0] * 5)[:5]
+        ek = (r.ek_succ_bfs_times + [0.0] * 5)[:5]
+        body.append([
+            str(r.n),
+            *[f"{t:.6f}" for t in ff],
+            f"{r.ff_pred_dfs_mean:.6f}",
+            *[f"{t:.6f}" for t in ek],
+            f"{r.ek_succ_bfs_mean:.6f}",
+        ])
+    table = Table(
+        [header] + body,
+        colWidths=[1.0*cm] + [1.2*cm]*5 + [1.6*cm] + [1.2*cm]*5 + [1.6*cm],
+    )
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("FONTSIZE", (0,0), (-1,-1), 7),
+        ("BOTTOMPADDING", (0,0), (-1,0), 4),
+        ("TOPPADDING", (0,0), (-1,0), 4),
+    ]))
+    return table
+
+
+def _graph_layout(n: int) -> List[Tuple[float, float]]:
+    angles = [2 * math.pi * i / n for i in range(n)]
+    return [(math.cos(a), math.sin(a)) for a in angles]
+
+
+def _plot_directed_graph(
+    capacity: np.ndarray,
+    out_png: Path,
+    title: str,
+    edge_values: Optional[np.ndarray] = None,
+    edge_color: str = "#1f77b4",
+) -> None:
+    n = capacity.shape[0]
+    pos = _graph_layout(n)
+    max_val = 0.0
+    for u in range(n):
+        for v in range(n):
+            if u == v:
+                continue
+            val = edge_values[u, v] if edge_values is not None else capacity[u, v]
+            if val > max_val:
+                max_val = float(val)
+    max_val = max_val if max_val > 0 else 1.0
+
+    plt.figure(figsize=(6, 6))
+    ax = plt.gca()
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    for u in range(n):
+        for v in range(n):
+            if u == v:
+                continue
+            base_val = capacity[u, v]
+            if base_val <= 0:
+                continue
+            val = edge_values[u, v] if edge_values is not None else base_val
+            if edge_values is not None and val <= 0:
+                continue
+            width = 0.5 + 2.5 * (float(val) / max_val)
+            ax.annotate(
+                "",
+                xy=pos[v],
+                xytext=pos[u],
+                arrowprops=dict(arrowstyle="->", lw=width, color=edge_color, alpha=0.65),
+            )
+            mx = (pos[u][0] + pos[v][0]) / 2
+            my = (pos[u][1] + pos[v][1]) / 2
+            ax.text(mx, my, f"{val:.1f}", fontsize=7, color=edge_color)
+
+    for i, (x, y) in enumerate(pos):
+        ax.scatter([x], [y], s=200, color="#f2f2f2", edgecolors="#333333", zorder=3)
+        ax.text(x, y, label(i), fontsize=8, ha="center", va="center", zorder=4)
+
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(out_png, dpi=200)
+    plt.close()
+
+
+def _plot_flow_heatmap(flow: np.ndarray, out_png: Path) -> None:
+    plt.figure(figsize=(6, 5))
+    plt.imshow(flow, cmap="viridis")
+    plt.colorbar(label="fluxo por aresta")
+    plt.title("Mapa de calor do fluxo (arestas)")
+    plt.xlabel("v")
+    plt.ylabel("u")
+    plt.tight_layout()
+    plt.savefig(out_png, dpi=200)
+    plt.close()
+
+
+def _flow_stats(flow: np.ndarray) -> Tuple[int, float, float]:
+    positive = flow[flow > 0]
+    count = int(positive.size)
+    mean = float(positive.mean()) if count > 0 else 0.0
+    max_val = float(positive.max()) if count > 0 else 0.0
+    return count, mean, max_val
+
+
 def _plot_times(rows: List[Part1Row], out_png: Path) -> None:
     ns = [r.n for r in rows]
-    ff = [r.ff_pred_dfs_seconds for r in rows]
-    ek = [r.ek_succ_bfs_seconds for r in rows]
+    ff = [r.ff_pred_dfs_mean for r in rows]
+    ek = [r.ek_succ_bfs_mean for r in rows]
 
     plt.figure(figsize=(8, 4.5))
     x = range(len(ns))
@@ -140,7 +276,7 @@ def _plot_times(rows: List[Part1Row], out_png: Path) -> None:
 
 def _plot_speedup(rows: List[Part1Row], out_png: Path) -> None:
     ns = [r.n for r in rows]
-    speedup = [_safe_div(r.ff_pred_dfs_seconds, r.ek_succ_bfs_seconds) for r in rows]
+    speedup = [_safe_div(r.ff_pred_dfs_mean, r.ek_succ_bfs_mean) for r in rows]
 
     plt.figure(figsize=(8, 4.5))
     x = range(len(ns))
@@ -202,19 +338,25 @@ def generate_report_pdf(
     ))
     story.append(Spacer(1, 0.4*cm))
 
-    story.append(Paragraph("2. Resultados — Parte 1 (2 simulações)", h2))
-    story.append(Paragraph("Tabela consolidada dos testes automáticos:", body))
+    story.append(Paragraph("2. Resultados — Parte 1 (2 simulações, 5 repetições cada)", h2))
+    story.append(Paragraph("Tabela consolidada dos testes automáticos (fluxos e tempos médios):", body))
     story.append(Spacer(1, 0.2*cm))
     story.append(_make_part1_table(rows1))
     story.append(Spacer(1, 0.4*cm))
 
-    story.append(Paragraph("2.1 Tempo de execução", h2))
-    story.append(Paragraph("Comparativo de tempo por n:", body))
+    story.append(Paragraph("2.1 Tempos individuais (5 execuções)", h2))
+    story.append(Paragraph("Tabela separada com os 5 tempos e a média:", body))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(_make_times_table(rows1))
+    story.append(Spacer(1, 0.4*cm))
+
+    story.append(Paragraph("2.2 Tempo de execução", h2))
+    story.append(Paragraph("Comparativo de tempo médio por n:", body))
     story.append(Spacer(1, 0.2*cm))
     story.append(Image(str(png_times), width=16*cm, height=9*cm))
     story.append(Spacer(1, 0.4*cm))
 
-    story.append(Paragraph("2.2 Razão de tempo (FF/EK)", h2))
+    story.append(Paragraph("2.3 Razão de tempo (FF/EK)", h2))
     story.append(Paragraph(
         "Valores maiores que 1 indicam que Ford–Fulkerson (pred+DFS) foi mais lento que Edmonds–Karp (succ+BFS).",
         body
@@ -223,18 +365,65 @@ def generate_report_pdf(
     story.append(Image(str(png_speedup), width=16*cm, height=9*cm))
     story.append(Spacer(1, 0.4*cm))
 
-    story.append(Paragraph("2.3 Observações", h2))
+    story.append(Paragraph("2.4 Observações", h2))
     obs_lines = []
     for r in rows1:
-        ratio = _safe_div(r.ff_pred_dfs_seconds, r.ek_succ_bfs_seconds)
+        ratio = _safe_div(r.ff_pred_dfs_mean, r.ek_succ_bfs_mean)
+        ff_times = ", ".join(f"{t:.6f}s" for t in r.ff_pred_dfs_times)
+        ek_times = ", ".join(f"{t:.6f}s" for t in r.ek_succ_bfs_times)
         obs_lines.append(
             f"Para n={r.n}, fluxos coincidem: {'sim' if r.equal_flows else 'não'}; "
-            f"FF={r.ff_pred_dfs_seconds:.6f}s, EK={r.ek_succ_bfs_seconds:.6f}s, FF/EK={ratio:.2f}."
+            f"FF tempos=[{ff_times}] (média {r.ff_pred_dfs_mean:.6f}s), "
+            f"EK tempos=[{ek_times}] (média {r.ek_succ_bfs_mean:.6f}s), FF/EK={ratio:.2f}."
         )
     story.append(Paragraph("<br/>".join(obs_lines), body))
 
     story.append(PageBreak())
-    story.append(Paragraph("3. Parte 2 — Linguagem Generativa (manual)", h2))
+    story.append(Paragraph("3. Visualizações do Grafo 1 (n=10)", h2))
+    story.append(Paragraph(
+        "Representação visual do grafo e do fluxo (usando Edmonds–Karp), além de métricas do fluxo nas arestas.",
+        body,
+    ))
+
+    graph_png = run_dir / "graph_n10.png"
+    flow_png = run_dir / "flow_n10.png"
+    heatmap_png = run_dir / "flow_heatmap_n10.png"
+
+    row_n10 = next((r for r in rows1 if r.n == 10), None)
+    matrix_path = (run_dir / f"matrix_n10_seed{row_n10.seed}.csv") if row_n10 else None
+    if matrix_path is not None and matrix_path.exists():
+        g = load_capacity_matrix_csv(matrix_path)
+        cap = g.capacities
+        succ = g.successor_lists(include_residual_reverse=True)
+        result = max_flow_edmonds_karp_succ_bfs(cap, succ, s=0, t=g.n - 1)
+        flow = np.maximum(0.0, cap - result.residual)
+
+        _plot_directed_graph(cap, graph_png, "Grafo capacitado (n=10)")
+        _plot_directed_graph(cap, flow_png, "Fluxo nas arestas (n=10)", edge_values=flow, edge_color="#d62728")
+        _plot_flow_heatmap(flow, heatmap_png)
+
+        used_edges, mean_flow, max_flow_edge = _flow_stats(flow)
+        story.append(Spacer(1, 0.2*cm))
+        story.append(Image(str(graph_png), width=14*cm, height=14*cm))
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Image(str(flow_png), width=14*cm, height=14*cm))
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Image(str(heatmap_png), width=14*cm, height=12*cm))
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph(
+            f"Arestas com fluxo positivo: {used_edges}; "
+            f"fluxo médio nas arestas usadas: {mean_flow:.3f}; "
+            f"maior fluxo em uma aresta: {max_flow_edge:.3f}.",
+            body,
+        ))
+    else:
+        story.append(Paragraph(
+            "Matriz do grafo n=10 não encontrada na pasta do experimento. Rode: python run.py simulate.",
+            body,
+        ))
+
+    story.append(PageBreak())
+    story.append(Paragraph("4. Parte 2 — Linguagem Generativa (manual)", h2))
     if row2 is None:
         story.append(Paragraph(
             "Não há resultado da Parte 2 nesta pasta. Para gerar, rode: "
